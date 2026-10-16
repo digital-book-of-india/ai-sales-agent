@@ -1,0 +1,914 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Convention for every model added to this schema:
+//   id        String   @id @default(uuid()) @db.Uuid
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  SALES_MANAGER
+  SALES_EXECUTIVE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  INTERESTED
+  QUALIFIED
+  DEMO_SCHEDULED
+  PROPOSAL_SENT
+  NEGOTIATION
+  WON
+  LOST
+  NOT_INTERESTED
+  CALL_LATER
+  INVALID
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  STOPPED
+}
+
+// Who/what a Call is bridged to once answered — set by the caller
+// (DialerService) and passed into TelephonyProvider.initiateCall, not
+// decided inside the provider. AI bridges to the AI voice pipeline;
+// MANUAL bridges to salesUserId's registered SIP extension (User.sipExtension).
+enum CallMode {
+  AI
+  MANUAL
+}
+
+enum CallingQueueStatus {
+  PENDING
+  QUEUED
+  DIALING
+  RINGING
+  CONNECTED
+  COMPLETED
+  FAILED
+  NO_ANSWER
+  BUSY
+  RETRY
+  SKIPPED
+  CANCELLED
+}
+
+// Lifecycle of one provider-side call attempt. Distinct from
+// CallingQueueStatus (which tracks the queue item across retries) — a Call
+// row is one dial attempt as reported by the telephony provider.
+enum CallStatus {
+  INITIATED
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  NO_ANSWER
+  BUSY
+  CANCELLED
+}
+
+// Lifecycle of a stored recording, independent of the Call it belongs to.
+// ACTIVE recordings are servable; EXPIRED ones have aged past the retention
+// window and are hidden from playback/download but kept for audit until a
+// cleanup job (not yet built) purges them to DELETED.
+enum RecordingRetentionStatus {
+  ACTIVE
+  EXPIRED
+  DELETED
+}
+
+// Who said a given transcript message — the AI voice pipeline or the
+// customer on the other end of the line. Mirrors ConversationTurn['role']
+// in ../src/calling/ai-voice/conversation-state.ts, but that state is
+// in-memory/per-call-session only; TranscriptMessage is the durable,
+// queryable record of the same dialogue.
+enum TranscriptSpeaker {
+  AI
+  CUSTOMER
+}
+
+// Whether the transcript indicates the person on the call can actually say
+// yes — as opposed to needing to check with someone else. UNKNOWN means the
+// analysis LLM couldn't tell either way from the conversation.
+enum DecisionMaker {
+  YES
+  NO
+  UNKNOWN
+}
+
+// Buying intent the post-call analysis LLM read off the transcript — one of
+// the weighted inputs to the lead score (see lead-scoring.util.ts).
+enum CallIntent {
+  HIGH
+  MEDIUM
+  LOW
+  NONE
+}
+
+enum CallSentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+// Display/triage bucket for Lead.leadScore — fixed bands (see
+// lead-scoring.util.ts), independent of the configurable weights that
+// produce the underlying score.
+enum LeadScoreCategory {
+  HOT
+  WARM
+  COLD
+  LOW
+}
+
+enum FollowUpStatus {
+  PENDING
+  DONE
+  CANCELLED
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+  NO_SHOW
+}
+
+enum TaskType {
+  FOLLOW_UP
+  CALL
+  DEMO
+  SEND_QUOTATION
+  SEND_PROPOSAL
+  MEETING
+  INTERNAL
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// To Do / In Progress / Done — the three Task Board columns (see
+// TasksController/TasksService, Prompt 16). Distinct from FollowUpStatus and
+// MeetingStatus above even though the shape rhymes, same one-enum-per-model
+// convention used throughout this schema.
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(SALES_EXECUTIVE)
+  // Flipped false by POST /team/:id/deactivate (Prompt 20) instead of
+  // deleting the row — every FK (assignedLeads, calls, deals, ...) stays
+  // intact. AuthService.validateUser rejects login while false; deactivating
+  // also revokes this user's live refresh tokens (see TeamService.deactivate).
+  isActive     Boolean  @default(true)
+  // This user's registered SIP softphone extension (e.g. "1002" — a PJSIP
+  // endpoint configured under infra/asterisk/etc/asterisk/pjsip.internal.conf).
+  // Null means the user has no softphone registered yet; SipTelephonyProvider
+  // (asterisk.provider.ts) rejects a MANUAL initiateCall for a salesUserId
+  // with no extension rather than silently ringing nobody.
+  sipExtension String?  @unique
+  // Registration secret for sipExtension's browser-based WebRTC softphone
+  // (see GET /users/me/sip-credentials and frontend/src/calling/softphone.ts).
+  // Deliberately plaintext, not bcrypt-hashed like passwordHash — this is a
+  // PBX registration secret the browser's SIP stack must present verbatim
+  // during digest auth, not an account credential. Must exactly match this
+  // extension's password in infra/asterisk/etc/asterisk/pjsip.internal.conf
+  // on the PBX server. Null whenever sipExtension is null.
+  sipPassword  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  assignedLeads       Lead[]               @relation("LeadAssignee")
+  leadNotes           LeadNote[]
+  manualCalls         Call[]               @relation("CallSalesUser")
+  activities          Activity[]           @relation("ActivityActor")
+  followUpsCreated    FollowUp[]           @relation("FollowUpCreator")
+  meetings            Meeting[]            @relation("MeetingSalesperson")
+  deals               Deal[]               @relation("DealOwner")
+  tasks               Task[]               @relation("TaskAssignee")
+  notifications       Notification[]       @relation("NotificationRecipient")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("password_reset_tokens")
+}
+
+model Lead {
+  id              String       @id @default(uuid()) @db.Uuid
+  name            String
+  phone           String
+  alternatePhone  String?
+  email           String?
+  companyName     String?
+  designation     String?
+  industry        String?
+  city            String?
+  state           String?
+  source          String?
+  status          LeadStatus   @default(NEW)
+  priority        LeadPriority @default(MEDIUM)
+  leadScore       Int          @default(0)
+  assignedToId    String?      @db.Uuid
+  assignedTo      User?        @relation("LeadAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  requirement     String?
+  budget          Int?
+  timeline        String?
+  tags            String[]     @default([])
+  lastContactedAt DateTime?
+  nextFollowUpAt  DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  notes             LeadNote[]
+  campaignLeads     CampaignLead[]
+  callingQueueItems CallingQueue[]
+  calls             Call[]
+  activities        Activity[]
+  followUps         FollowUp[]
+  meetings          Meeting[]
+  deals             Deal[]
+  tasks             Task[]         @relation("TaskLead")
+  notifications     Notification[]
+
+  @@index([status])
+  @@index([assignedToId])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+model LeadNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  leadId    String   @db.Uuid
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId  String   @db.Uuid
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@map("lead_notes")
+}
+
+model Campaign {
+  id               String         @id @default(uuid()) @db.Uuid
+  name             String
+  description      String?
+  objective        String?
+  aiAgentId        String?        @db.Uuid
+  leadFilters      Json           @default("{}")
+  callingHours     Json           @default("{}")
+  maxAttempts      Int            @default(3)
+  retryInterval    Int            @default(60)
+  concurrentCalls  Int            @default(1)
+  callsPerMinute   Int            @default(10)
+  startDate        DateTime?
+  endDate          DateTime?
+  // Whether calls dialed under this campaign disclose/obtain recording
+  // consent (e.g. an announcement played before recording starts). Read by
+  // CallsService before enqueuing a post-call recording fetch — when false,
+  // no recording is ever stored for this campaign's calls.
+  recordingConsent Boolean        @default(true)
+  status           CampaignStatus @default(DRAFT)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  campaignLeads CampaignLead[]
+  queueItems    CallingQueue[]
+  calls         Call[]
+
+  @@index([status])
+  @@map("campaigns")
+}
+
+model CampaignLead {
+  id         String   @id @default(uuid()) @db.Uuid
+  campaignId String   @db.Uuid
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  leadId     String   @db.Uuid
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  addedAt    DateTime @default(now())
+
+  @@unique([campaignId, leadId])
+  @@index([campaignId])
+  @@index([leadId])
+  @@map("campaign_leads")
+}
+
+model CallingQueue {
+  id            String             @id @default(uuid()) @db.Uuid
+  leadId        String             @db.Uuid
+  lead          Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaignId    String             @db.Uuid
+  campaign      Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  priority      Int                @default(0)
+  status        CallingQueueStatus @default(PENDING)
+  attempts      Int                @default(0)
+  maxAttempts   Int                @default(3)
+  scheduledAt   DateTime           @default(now())
+  nextRetryAt   DateTime?
+  lastAttemptAt DateTime?
+  callId        String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  calls Call[]
+
+  // One queue row per lead per campaign: doubles as the DB-level guard
+  // against enqueuing (and therefore dialing) the same lead twice within
+  // a campaign. Cross-campaign concurrent dialing of the same lead is
+  // additionally guarded by a Redis lock keyed on leadId (see CallLockService).
+  @@unique([campaignId, leadId])
+  @@index([status])
+  @@index([campaignId, status])
+  @@index([leadId])
+  @@map("calling_queue")
+}
+
+// One row per provider-side dial attempt. Written by the telephony
+// abstraction (TelephonyProvider implementations + the webhook handler),
+// never by the dialer directly — see backend/src/calling/telephony/.
+model Call {
+  id         String   @id @default(uuid()) @db.Uuid
+  leadId     String   @db.Uuid
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaignId String   @db.Uuid
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  queueItemId String       @db.Uuid
+  queueItem   CallingQueue @relation(fields: [queueItemId], references: [id], onDelete: Cascade)
+
+  // Which TelephonyProvider handled this call ("asterisk", "mock", ...) and
+  // that provider's own id for it — needed to call hangupCall/transferCall/
+  // getCallStatus/getRecording back on the same provider later.
+  provider       String
+  providerCallId String?    @unique
+  status         CallStatus @default(INITIATED)
+  duration       Int? // seconds, set once the call ends
+  recordingUrl   String?
+  startedAt      DateTime? // when the call left INITIATED (first ring)
+  endedAt        DateTime?
+  createdAt      DateTime   @default(now())
+
+  // AI or MANUAL — set once, at createCall, from whatever the dialer decided
+  // before calling provider.initiateCall(); the provider bridges the answered
+  // leg accordingly. The frontend doesn't need this (call.* websocket events
+  // are unchanged either way) — it's here for CRM/reporting to know who/what
+  // actually handled the call.
+  callMode    CallMode @default(AI)
+  salesUserId String?  @db.Uuid
+  salesUser   User?    @relation("CallSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
+
+  // True once VoiceSessionService has told the telephony provider to bridge
+  // this AI call to a human (the LLM reasoner's transfer_to_human action —
+  // see llm-reasoner.service.ts). callMode stays AI (that's who started the
+  // call); this flag is the only record that a handoff happened, read by
+  // AnalyticsService for the AI Analytics "human transfers" figure.
+  transferredToHuman Boolean @default(false)
+
+  // Redis lead-lock token held for the duration of this call attempt.
+  // processDial can't hold the lock in-process the way the old simulator
+  // did — a real call outlives the dialer job that started it — so the
+  // token is parked here and released by CallsService when a webhook (or
+  // the mock provider) reports a terminal status. Internal only, never
+  // selected by any provider-facing or frontend-facing query.
+  lockToken String?
+
+  recording     Recording?
+  transcript    Transcript?
+  analysis      CallAnalysis?
+  activities    Activity[]
+  notifications Notification[]
+
+  @@index([queueItemId])
+  @@index([campaignId])
+  @@index([salesUserId])
+  @@map("calls")
+}
+
+// One row per stored recording, written by RecordingsProcessor once a call
+// ends (see backend/src/calling/recordings/). recordingUrl is the raw
+// location the telephony provider reported — it is never handed to the
+// frontend directly; RecordingsService mints a short-lived signed URL for
+// playback/download instead (see recording-url.util.ts), so this field
+// itself does not need to be a secret.
+model Recording {
+  id              String                   @id @default(uuid()) @db.Uuid
+  callId          String                   @unique @db.Uuid
+  call            Call                     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  recordingUrl    String
+  duration        Int? // seconds
+  startedAt       DateTime?
+  endedAt         DateTime?
+  storageProvider String
+  retentionStatus RecordingRetentionStatus @default(ACTIVE)
+  createdAt       DateTime                 @default(now())
+
+  @@map("recordings")
+}
+
+// One transcript per call, created lazily by TranscriptsService the first
+// time a message is saved for that call (a MANUAL call, with no AI voice
+// session, never gets one). finalizedAt is stamped by CallsService when the
+// call reaches a terminal status — a transcript with finalizedAt: null is
+// still being written to live.
+model Transcript {
+  id          String    @id @default(uuid()) @db.Uuid
+  callId      String    @unique @db.Uuid
+  call        Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+  finalizedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  messages TranscriptMessage[]
+
+  @@map("transcripts")
+}
+
+// One row per STT/LLM-produced utterance, in speaking order. timestamp is
+// when the utterance was produced (not when the row was inserted); the two
+// can differ slightly since inserts are fire-and-forget from the voice
+// pipeline so a slow write never blocks live audio.
+model TranscriptMessage {
+  id           String            @id @default(uuid()) @db.Uuid
+  transcriptId String            @db.Uuid
+  transcript   Transcript        @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  speaker      TranscriptSpeaker
+  text         String
+  timestamp    DateTime          @default(now())
+  // STT provider's confidence for this utterance (0-1) — null for AI
+  // messages, which are generated text rather than transcribed audio.
+  confidence   Float?
+  createdAt    DateTime          @default(now())
+
+  @@index([transcriptId, timestamp])
+  @@map("transcript_messages")
+}
+
+// All business content that drives a calling AI agent's behaviour lives
+// here, editable by admins — never hardcoded in the dialer/telephony code.
+model AiAgent {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  description    String?
+  voice          String?
+  language       String?
+  personality    String?
+  openingMessage String?
+  objective      String?
+  // { days: string[], start: "HH:MM", end: "HH:MM" } — same shape as
+  // Campaign.callingHours.
+  workingHours   Json     @default("{}")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  knowledgeBase KnowledgeBase?
+  playbook      SalesPlaybook?
+
+  @@map("ai_agents")
+}
+
+// One knowledge base per agent — company info, products and services the
+// agent can speak to on a call.
+model KnowledgeBase {
+  id          String   @id @default(uuid()) @db.Uuid
+  agentId     String   @unique @db.Uuid
+  agent       AiAgent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  // { name, about, services, locations, contact }
+  companyInfo Json     @default("{}")
+  products    Json     @default("[]")
+  services    Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  faqs       Faq[]
+  objections Objection[]
+
+  @@map("knowledge_bases")
+}
+
+model Faq {
+  id              String        @id @default(uuid()) @db.Uuid
+  knowledgeBaseId String        @db.Uuid
+  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  question        String
+  answer          String
+  category        String?
+  priority        Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([knowledgeBaseId])
+  @@map("faqs")
+}
+
+model Objection {
+  id                  String        @id @default(uuid()) @db.Uuid
+  knowledgeBaseId     String        @db.Uuid
+  knowledgeBase       KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  objection           String
+  recommendedResponse String
+  followUpQuestion    String?
+  escalationRule      String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([knowledgeBaseId])
+  @@map("objections")
+}
+
+// One sales playbook per agent — the call script/flow the agent follows.
+model SalesPlaybook {
+  id                 String   @id @default(uuid()) @db.Uuid
+  agentId            String   @unique @db.Uuid
+  agent              AiAgent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  opening            String?
+  discoveryQuestions Json     @default("[]")
+  qualificationRules Json     @default("{}")
+  objectionHandling  Json     @default("{}")
+  closingRules       Json     @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  questions PlaybookQuestion[]
+
+  @@map("sales_playbooks")
+}
+
+model PlaybookQuestion {
+  id              String        @id @default(uuid()) @db.Uuid
+  playbookId      String        @db.Uuid
+  playbook        SalesPlaybook @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+  question        String
+  purpose         String?
+  expectedInfo    String?
+  possibleAnswers Json          @default("[]")
+  order           Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([playbookId])
+  @@map("playbook_questions")
+}
+
+// One row per call, written by the post-call analysis worker (see
+// backend/src/calling/analysis/) once a completed call's transcript has
+// been read by the LLM. requirement/budget/timeline mirror the Lead
+// columns of the same name but are this call's own extraction — the worker
+// copies non-empty values onto the Lead afterwards (see
+// CallAnalysisService.applyToLead) without ever overwriting a value with
+// nothing just because this call didn't mention it. budget is left as
+// free text here (e.g. "around 5 lakh") since that's what the transcript
+// actually contains; Lead.budget is the parsed Int (see budget-parser.util.ts).
+model CallAnalysis {
+  id     String @id @default(uuid()) @db.Uuid
+  callId String @unique @db.Uuid
+  call   Call   @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  summary     String?
+  requirement String?
+  budget      String?
+  timeline    String?
+
+  decisionMaker     DecisionMaker @default(UNKNOWN)
+  intent            CallIntent    @default(NONE)
+  sentiment         CallSentiment @default(NEUTRAL)
+  demoRequested     Boolean       @default(false)
+  // Array of { objection: string, response: string } as raised/handled on
+  // this call.
+  objections        Json          @default("[]")
+  // Array of question strings the customer asked, phrased generically enough
+  // (see CallAnalysisLlmService's prompt) that the same underlying question
+  // from different calls lands on identical text — lets AnalyticsService
+  // group these with a plain SQL GROUP BY rather than any NLP clustering.
+  customerQuestions Json          @default("[]")
+  nextAction        String?
+
+  // { opening, discovery, productKnowledge, objectionHandling, closing,
+  //   naturalness, total } — each 0-100, total the average. Only meaningful
+  //   for AI-handled calls (see CallAnalysisLlmService); left at defaults
+  //   for a manually-handled call analyzed the same way.
+  qualityScore     Json    @default("{}")
+  coachingFeedback String?
+
+  // Lead score/category computed from this analysis at the time it ran
+  // (see lead-scoring.util.ts) — kept alongside the analysis that produced
+  // it even though Lead.leadScore is also updated to match, so historical
+  // analyses stay accurate if scoring weights change later.
+  leadScore         Int               @default(0)
+  leadScoreCategory LeadScoreCategory @default(LOW)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("call_analyses")
+}
+
+// Generic admin-editable key/value config store. Each row is one named
+// setting whose shape is only known to whichever service reads that key —
+// e.g. SystemSettingsService.LEAD_SCORING_KEY holds the weighted rules
+// CallAnalysisService uses to turn an analysis into Lead.leadScore. Prefer
+// this over a bespoke table/column whenever a value needs to be tunable
+// without a migration.
+model SystemSetting {
+  id    String @id @default(uuid()) @db.Uuid
+  key   String @unique
+  // Shape is whatever the owning service defines for this key — see that
+  // service for the schema (e.g. LeadScoringWeights).
+  value Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+// Append-only audit trail / activity timeline entry, scoped to a lead (see
+// Lead Detail page's "Activity timeline"). `type` is a free-form string
+// rather than an enum — new activity types are expected to be added over
+// time (this prompt only produces "CALL_COMPLETED") without needing a
+// migration each time. `payload` carries whatever that type's consumer
+// needs — for CALL_COMPLETED that's { recordingId, transcriptId,
+// callAnalysisId, summary }. actorUserId is null for system-generated
+// entries (like CALL_COMPLETED) and set for anything a person did.
+model Activity {
+  id     String  @id @default(uuid()) @db.Uuid
+  leadId String  @db.Uuid
+  lead   Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  callId String? @db.Uuid
+  call   Call?   @relation(fields: [callId], references: [id], onDelete: SetNull)
+
+  type        String
+  payload     Json    @default("{}")
+  actorUserId String? @db.Uuid
+  actorUser   User?   @relation("ActivityActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId, createdAt])
+  @@index([callId])
+  @@map("activities")
+}
+
+// `type` is an enum (unlike Activity.type above) because every Notification
+// is read by the same generic frontend inbox/popup (see NotificationBell and
+// HumanTransferPopup) rather than by type-specific consumers — a closed,
+// known set keeps that rendering switch exhaustive. Prompt 19 — one value
+// per producer: HOT_LEAD/HIGH_VALUE_LEAD from CallAnalysisService (lead
+// scoring), FOLLOW_UP_DUE from FollowUpsService.processDue,
+// MEETING_SCHEDULED from MeetingsService/CallAnalysisService,
+// HUMAN_TRANSFER from HumanTransferService, CAMPAIGN_COMPLETED/
+// CALL_FAILURES_THRESHOLD from CallsService.finish, AI_ERROR from
+// VoiceSessionService's runTurn failure handler, DEAL_WON from
+// DealsService.moveStage. Add a value here (no migration needed beyond the
+// enum) when another notification-worthy event shows up.
+enum NotificationType {
+  HOT_LEAD
+  HIGH_VALUE_LEAD
+  FOLLOW_UP_DUE
+  MEETING_SCHEDULED
+  HUMAN_TRANSFER
+  CAMPAIGN_COMPLETED
+  CALL_FAILURES_THRESHOLD
+  AI_ERROR
+  DEAL_WON
+}
+
+// One row per in-app notification pushed to a user — produced by several
+// services (see NotificationType above) via the shared NotificationsService
+// (backend/src/notifications/). `payload` carries whatever `type` needs to
+// render — for HUMAN_TRANSFER that's the full handoff context:
+// customer/company/requirement/budget/timeline, the AI's running summary,
+// the lead score, the trigger reason(s), and the live conversation
+// transcript (see HumanTransferContext in human-transfer.types.ts); other
+// types carry a smaller, type-specific bag of fields. leadId/callId are
+// kept as their own columns
+// (redundant with payload) so the frontend can deep-link without parsing
+// payload, same reasoning as Activity.leadId/callId above.
+model Notification {
+  id     String           @id @default(uuid()) @db.Uuid
+  userId String           @db.Uuid
+  user   User             @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  type   NotificationType
+
+  leadId String? @db.Uuid
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  callId String? @db.Uuid
+  call   Call?   @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  title   String
+  body    String?
+  payload Json      @default("{}")
+  readAt  DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+// A scheduled callback for a lead — created either by the post-call
+// analysis LLM (see CallAnalysisService.extractFollowUp) when a transcript
+// contains a callback request like "call me on Friday", or manually via the
+// CRUD endpoints (see FollowUpsController). FollowUpsSchedulerService's
+// repeatable job (see follow-ups.processor.ts) periodically re-enters every
+// PENDING row whose dueAt has passed into the calling_queue, then marks it
+// DONE — a follow_up row's status therefore tracks its own lifecycle
+// independently of whatever happens to that later call attempt.
+model FollowUp {
+  id     String @id @default(uuid()) @db.Uuid
+  leadId String @db.Uuid
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  dueAt  DateTime
+  reason String
+  status FollowUpStatus @default(PENDING)
+
+  // Null means the AI post-call analysis created this row (no human
+  // requested it) — mirrors Activity.actorUserId's null-means-system
+  // convention above.
+  createdBy String? @db.Uuid
+  creator   User?   @relation("FollowUpCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([status, dueAt])
+  @@map("follow_ups")
+}
+
+// A scheduled meeting for a lead — created manually via the CRUD endpoints
+// (see MeetingsController) or automatically by the post-call analysis LLM
+// when a transcript contains a meeting request (see
+// CallAnalysisService.createMeetingIfRequested and
+// meeting-extractor.util.ts), same "AI or a human" split as FollowUp above.
+// date/time are kept as separate fields (date the calendar day, time a
+// "HH:MM" string) to match how the Calendar page and meeting form work with
+// them independently, rather than one combined DateTime.
+model Meeting {
+  id     String @id @default(uuid()) @db.Uuid
+  leadId String @db.Uuid
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  date          DateTime
+  time          String
+  salespersonId String   @db.Uuid
+  salesperson   User     @relation("MeetingSalesperson", fields: [salespersonId], references: [id], onDelete: Cascade)
+
+  meetingType String
+  meetingLink String?
+  notes       String?
+  status      MeetingStatus @default(SCHEDULED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([salespersonId])
+  @@index([date])
+  @@map("meetings")
+}
+
+// Fixed, admin-seeded lookup of Kanban columns for the Pipeline board (see
+// prisma/seed.ts) — `order` controls left-to-right column position, not
+// editable via the API in this prompt (only deals move between existing
+// stages; stages themselves are seeded data).
+model PipelineStage {
+  id    String @id @default(uuid()) @db.Uuid
+  name  String @unique
+  order Int
+
+  deals Deal[]
+
+  @@index([order])
+  @@map("pipeline_stages")
+}
+
+// One open (or won/lost) opportunity against a lead. stageId is moved via
+// DealsService.moveStage (drag-and-drop on the Pipeline Kanban board) rather
+// than the general update endpoint, so stage moves can be audited/validated
+// independently of editing value/probability/notes.
+model Deal {
+  id     String @id @default(uuid()) @db.Uuid
+  leadId String @db.Uuid
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  ownerId String @db.Uuid
+  owner   User   @relation("DealOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  value       Int
+  probability Int @default(0)
+
+  stageId String        @db.Uuid
+  stage   PipelineStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  expectedCloseDate DateTime?
+  notes             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks Task[] @relation("TaskDeal")
+
+  @@index([leadId])
+  @@index([ownerId])
+  @@index([stageId])
+  @@map("deals")
+}
+
+// A to-do item assigned to a sales rep (Prompt 16) — optionally tied to a
+// Lead and/or a Deal so it can be created directly from either detail page,
+// but neither relation is required: `type: INTERNAL` covers admin busywork
+// with no CRM record behind it. status drives the Task Board's three fixed
+// columns (see TaskStatus) rather than a configurable stages table like
+// PipelineStage — there's no requirement to reorder/add columns here.
+model Task {
+  id          String  @id @default(uuid()) @db.Uuid
+  title       String
+  description String?
+
+  type TaskType
+
+  assignedToId String @db.Uuid
+  assignedTo   User   @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: Cascade)
+
+  dueDate  DateTime
+  priority TaskPriority @default(MEDIUM)
+  status   TaskStatus   @default(TODO)
+
+  relatedLeadId String? @db.Uuid
+  relatedLead   Lead?   @relation("TaskLead", fields: [relatedLeadId], references: [id], onDelete: SetNull)
+
+  relatedDealId String? @db.Uuid
+  relatedDeal   Deal?   @relation("TaskDeal", fields: [relatedDealId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([relatedLeadId])
+  @@index([relatedDealId])
+  @@map("tasks")
+}

@@ -1,0 +1,8 @@
+Full Name,Mobile Number,Alternate Number,Email,Company,Designation,Industry,City,State,Source,Requirement,Budget,Timeline,Tags
+Rohan Mehta,9876543210,,rohan@nimbustech.com,NimbusTech,VP Sales,SaaS,Mumbai,Maharashtra,Website,CRM software for 50 agents,50000,1 month,"hot,enterprise"
+Priya Nair,9123456780,9123456781,priya.nair@zylotech.in,ZyloTech,Founder,E-commerce,Bengaluru,Karnataka,Referral,Sales automation tool,75000,2 weeks,warm
+Arjun Kapoor,8899001122,,arjun@kapoorindustries.com,Kapoor Industries,Purchase Manager,Manufacturing,Delhi,Delhi,Cold Call,Inventory management system,120000,3 months,hot
+Sneha Reddy,12345,,sneha@reddy.com,Reddy Textiles,Owner,Textiles,Hyderabad,Telangana,Website,Bulk billing software,30000,1 month,warm
+,9988776655,,noemail@example.com,Unknown Corp,,,Chennai,Tamil Nadu,Website,Not specified,,,cold
+Rohan Duplicate,9876543210,,rohan.dup@example.com,NimbusTech,,,Mumbai,Maharashtra,Website,Duplicate test row,,,test
+Karan Singh,9001122334,,karan.singh@singhtraders.com,Singh Traders,Director,Retail,Pune,Maharashtra,Trade Show,Bulk order management,200000,6 weeks,"hot,priority"

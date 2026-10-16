@@ -1,0 +1,24 @@
+; ============================================================================
+; AMI user for the NestJS backend — TEMPLATE. Copy to backend.conf (not in
+; git — see ../../.gitignore) on the Asterisk server:
+;
+;   cp backend.conf.example backend.conf
+;   $EDITOR backend.conf   # set a real secret and permit/deny below
+;   chown asterisk:asterisk backend.conf
+;   chmod 640 backend.conf
+;
+; secret: generate with `openssl rand -hex 32`. Put the SAME value in the
+; backend's .env as ASTERISK_AMI_PASSWORD — never commit either copy.
+;
+; permit/deny: replace 10.0.0.5 with your backend server's actual IP (or a
+; /32 or narrow CIDR covering it). If bindaddr in manager.conf is already
+; 127.0.0.1 (backend on the same box), this permit line is a second,
+; redundant layer of the same restriction — keep it anyway.
+; ============================================================================
+
+[backend]
+secret = REPLACE_WITH_A_LONG_RANDOM_SECRET
+deny = 0.0.0.0/0.0.0.0
+permit = 10.0.0.5/255.255.255.255
+read = call,system,agent,user
+write = call,system,agent,originate

@@ -1,0 +1,49 @@
+; ============================================================================
+; Internal extension(s) — TEMPLATE. Copy to pjsip.internal.conf on the
+; server (not in git) and set a real password. This is what a human agent's
+; softphone registers to, and what the dialplan's "bridge to an internal
+; extension" branch (see extensions.conf) rings — both for a MANUAL AI-dialer
+; call (BRIDGE_TARGET=manual/TARGET_EXTENSION) and for click-to-call
+; (Prompt C: POST /leads/:id/call, salesUserId's own User.sipExtension).
+;
+;   cp pjsip.internal.conf.example pjsip.internal.conf
+;   $EDITOR pjsip.internal.conf
+;   chown asterisk:asterisk pjsip.internal.conf
+;   chmod 640 pjsip.internal.conf
+;
+; Add one [NNNN]/[NNNN-auth]/[NNNN] trio per extension you need. webrtc=yes +
+; transport=transport-wss (below) make it the browser-based softphone SIP.js
+; registers to over WSS (frontend/src/calling/softphone.ts) — needs
+; [transport-wss] uncommented in pjsip.conf first. A desk phone (Zoiper,
+; Linphone, ...) instead would drop those two lines and register over plain
+; UDP like any ordinary PJSIP endpoint.
+; ============================================================================
+
+[1001]
+type=endpoint
+context=from-internal
+disallow=all
+allow=opus
+allow=ulaw
+allow=alaw
+; Remove these two lines (and use plain UDP registration) for a desk phone
+; instead of the browser softphone.
+webrtc=yes
+transport=transport-wss
+auth=1001-auth
+aors=1001
+direct_media=no
+
+[1001-auth]
+type=auth
+auth_type=userpass
+username=1001
+; Must exactly match this extension's owner — User.sipPassword in Postgres
+; (see backend/prisma/schema.prisma). SEED_SIP_PASSWORD sets it for the
+; seeded demo Sales Executive; set it directly in the DB for a real user.
+password=REPLACE_WITH_A_STRONG_PASSWORD
+
+[1001]
+type=aor
+max_contacts=1
+remove_existing=yes

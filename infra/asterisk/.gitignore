@@ -1,0 +1,8 @@
+# Real credential/config files derived from the *.example templates in
+# this tree. Only the .example templates (placeholders, no real secrets)
+# are meant to be committed — see README.md "Deploying" for how to turn
+# each .example into the real file on the Asterisk server itself.
+etc/asterisk/pjsip.airtel_trunk.conf
+etc/asterisk/pjsip.internal.conf
+etc/asterisk/manager.d/backend.conf
+nginx/.htpasswd

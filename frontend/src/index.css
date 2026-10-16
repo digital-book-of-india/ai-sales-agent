@@ -1,0 +1,208 @@
+@import 'tailwindcss';
+
+:root {
+  --bg: #f6f7fb;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-hover: #f6f7fb;
+  --border: #e5e7f0;
+  --border-strong: #d6d9e6;
+
+  --ink: #1f2233;
+  --muted: #6b7086;
+  --faint: #9296a8;
+
+  --brand: #4f46e5;
+  --brand-hover: #4338ca;
+  --brand-active: #3730a3;
+  --brand-soft: #eef0fd;
+  --brand-on: #ffffff;
+
+  --success: #059669;
+  --success-soft: #e7f7f0;
+  --danger: #dc2626;
+  --danger-soft: #fdeaea;
+  --warning: #d97706;
+  --warning-soft: #fdf3e5;
+
+  --shadow-color-sm: rgba(16, 18, 40, 0.06);
+  --shadow-color-md-1: rgba(16, 18, 40, 0.06);
+  --shadow-color-md-2: rgba(16, 18, 40, 0.08);
+  --shadow-color-lg-1: rgba(16, 18, 40, 0.18);
+  --shadow-color-lg-2: rgba(16, 18, 40, 0.06);
+  --focus-ring-color: rgba(79, 70, 229, 0.25);
+
+  /* Chart tokens: chart-series-2 is the categorical slot-2 partner to
+     --brand for the two-line calls-over-time chart. chart-funnel-1..8 is a
+     single-hue ordinal ramp (light -> dark) for the ordered lead funnel. */
+  --chart-grid: var(--border);
+  --chart-series-2: #eb6834;
+  --chart-funnel-1: #b7d3f6;
+  --chart-funnel-2: #9ec5f4;
+  --chart-funnel-3: #86b6ef;
+  --chart-funnel-4: #6da7ec;
+  --chart-funnel-5: #5598e7;
+  --chart-funnel-6: #3987e5;
+  --chart-funnel-7: #256abf;
+  --chart-funnel-8: #184f95;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e0f16;
+    --bg-elevated: #14151f;
+    --surface: #171826;
+    --surface-hover: #1d1e2e;
+    --border: #262838;
+    --border-strong: #33354a;
+
+    --ink: #eef0f8;
+    --muted: #a3a6bd;
+    --faint: #71748c;
+
+    --brand: #818cf8;
+    --brand-hover: #93a0fb;
+    --brand-active: #a5b0fc;
+    --brand-soft: rgba(129, 140, 248, 0.14);
+    --brand-on: #14151f;
+
+    --success: #34d399;
+    --success-soft: rgba(52, 211, 153, 0.14);
+    --danger: #f87171;
+    --danger-soft: rgba(248, 113, 113, 0.14);
+    --warning: #fbbf24;
+    --warning-soft: rgba(251, 191, 36, 0.14);
+
+    --shadow-color-sm: rgba(0, 0, 0, 0.3);
+    --shadow-color-md-1: rgba(0, 0, 0, 0.35);
+    --shadow-color-md-2: rgba(0, 0, 0, 0.4);
+    --shadow-color-lg-1: rgba(0, 0, 0, 0.55);
+    --shadow-color-lg-2: rgba(0, 0, 0, 0.35);
+    --focus-ring-color: rgba(129, 140, 248, 0.3);
+
+    --chart-series-2: #d95926;
+    --chart-funnel-1: #cde2fb;
+    --chart-funnel-2: #b7d3f6;
+    --chart-funnel-3: #9ec5f4;
+    --chart-funnel-4: #86b6ef;
+    --chart-funnel-5: #6da7ec;
+    --chart-funnel-6: #5598e7;
+    --chart-funnel-7: #3987e5;
+    --chart-funnel-8: #2a78d6;
+  }
+}
+
+@theme inline {
+  --font-sans:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-active: var(--brand-active);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-on: var(--brand-on);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-series-2: var(--chart-series-2);
+
+  --shadow-sm: 0 1px 2px var(--shadow-color-sm);
+  --shadow-md:
+    0 4px 12px var(--shadow-color-md-1), 0 1px 3px var(--shadow-color-md-2);
+  --shadow-lg:
+    0 20px 40px -12px var(--shadow-color-lg-1),
+    0 4px 12px var(--shadow-color-lg-2);
+
+  --ring-focus: 0 0 0 3px var(--focus-ring-color);
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-bg text-ink font-sans antialiased;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-border bg-surface p-6 shadow-sm;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold before:h-1.5 before:w-1.5 before:rounded-full before:bg-current;
+  }
+
+  .badge-success {
+    @apply bg-success-soft text-success;
+  }
+
+  .badge-danger {
+    @apply bg-danger-soft text-danger;
+  }
+
+  .badge-warning {
+    @apply bg-warning-soft text-warning;
+  }
+
+  .badge-muted {
+    @apply bg-surface-hover text-muted;
+  }
+
+  .btn-primary {
+    @apply cursor-pointer rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-brand-on outline-none transition-colors hover:bg-brand-hover focus-visible:shadow-(--ring-focus) active:bg-brand-active disabled:cursor-not-allowed disabled:opacity-70;
+  }
+
+  .btn-secondary {
+    @apply cursor-pointer rounded-lg border border-border-strong bg-transparent px-3 py-2 text-sm font-semibold text-muted outline-none transition-colors hover:bg-surface-hover hover:text-ink focus-visible:shadow-(--ring-focus);
+  }
+
+  .btn-danger {
+    @apply cursor-pointer rounded-lg bg-danger px-4 py-2.5 text-sm font-semibold text-white outline-none transition-colors hover:opacity-90 focus-visible:shadow-(--ring-focus) active:opacity-80 disabled:cursor-not-allowed disabled:opacity-70;
+  }
+
+  .toast-item {
+    animation: toast-in 0.18s ease-out;
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-border-strong bg-bg-elevated px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-faint focus-visible:border-brand focus-visible:shadow-(--ring-focus);
+  }
+
+  .nav-link {
+    @apply flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-surface-hover hover:text-ink;
+  }
+
+  .nav-link.active {
+    @apply bg-brand-soft text-brand;
+  }
+}

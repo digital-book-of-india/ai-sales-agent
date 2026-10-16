@@ -1,0 +1,70 @@
+; ============================================================================
+; Airtel SIP trunk — TEMPLATE. Copy this file to pjsip.airtel_trunk.conf on
+; the Asterisk server (NOT in git — see ../../.gitignore) and fill in the
+; real values Airtel gave you: SIP server host, port, username, password,
+; and your DID (the phone number Airtel assigned this trunk).
+;
+;   cp pjsip.airtel_trunk.conf.example pjsip.airtel_trunk.conf
+;   $EDITOR pjsip.airtel_trunk.conf
+;   chown asterisk:asterisk pjsip.airtel_trunk.conf
+;   chmod 640 pjsip.airtel_trunk.conf
+;
+; Never paste real values into this .example file or into chat/tickets —
+; fill them in directly on the server.
+; ============================================================================
+
+[airtel-auth]
+type=auth
+auth_type=userpass
+username=AIRTEL_SIP_USERNAME
+password=AIRTEL_SIP_PASSWORD
+
+[airtel-aor]
+type=aor
+contact=sip:AIRTEL_SIP_HOST:AIRTEL_SIP_PORT
+qualify_frequency=60
+qualify_timeout=3
+
+; Most Indian ITSP trunks (Airtel included) require a periodic SIP REGISTER
+; to keep the trunk "up" and tell the carrier where to send inbound calls.
+; If your specific Airtel trunk is IP-authenticated instead (no REGISTER —
+; Airtel routes to your call to a fixed IP:port they've allowlisted),
+; comment out this whole [airtel-registration] section instead.
+[airtel-registration]
+type=registration
+transport=transport-udp
+outbound_auth=airtel-auth
+client_uri=sip:AIRTEL_SIP_USERNAME@AIRTEL_SIP_HOST:AIRTEL_SIP_PORT
+server_uri=sip:AIRTEL_SIP_HOST:AIRTEL_SIP_PORT
+contact_user=AIRTEL_SIP_USERNAME
+retry_interval=60
+forbidden_retry_interval=600
+expiration=3600
+
+; Lets Asterisk recognize inbound INVITEs from Airtel's SIP host as coming
+; from this trunk (matched by source IP) rather than being rejected as
+; unauthenticated. If Airtel sends signaling/media from more than one IP,
+; add one `match=` line per IP — ask Airtel support for the full list.
+[airtel-identify]
+type=identify
+endpoint=airtel-trunk
+match=AIRTEL_SIP_HOST
+
+[airtel-trunk]
+type=endpoint
+transport=transport-udp
+context=from-airtel
+disallow=all
+allow=ulaw
+allow=alaw
+outbound_auth=airtel-auth
+aors=airtel-aor
+from_user=AIRTEL_DID_NUMBER
+from_domain=AIRTEL_SIP_HOST
+caller_id=AIRTEL_DID_NUMBER
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+trust_id_inbound=yes
+send_pai=no
