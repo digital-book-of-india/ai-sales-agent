@@ -9,9 +9,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'https://ai-sales-agent-azure.vercel.app',
+    configService.get<string>('FRONTEND_URL'),
+  ].filter((origin): origin is string => !!origin);
+
   app.enableCors({
-    origin:
-      configService.get<string>('FRONTEND_URL') ?? 'http://localhost:5173',
+    origin: [...new Set(allowedOrigins)],
     credentials: true,
   });
   app.use(cookieParser());
